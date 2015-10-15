@@ -72,7 +72,42 @@ type GoStringer interface {
 	GoString() string
 }
 
-// Use simple []byte instead of bytes.Buffer to avoid large dependency.
+// Use simple []byte instead of bytes.buffer to avoid large dependency.
+type fmtBuffer struct {
+	bytes []byte
+}
+
+func (b *fmtBuffer) Write(p []byte) (n int, err error) {
+	b.bytes = append(b.bytes, p...)
+	return len(p), nil
+}
+
+func (b *fmtBuffer) WriteString(s string) (n int, err error) {
+	b.bytes = append(b.bytes, s...)
+	return len(s), nil
+}
+
+func (b *fmtBuffer) WriteByte(c byte) error {
+	b.bytes = append(b.bytes, c)
+	return nil
+}
+
+func (bp *fmtBuffer) WriteRune(r rune) error {
+	if r < utf8.RuneSelf {
+		bp.bytes = append(bp.bytes, byte(r))
+		return nil
+	}
+
+	b := bp.bytes
+	n := len(b)
+	for n+utf8.UTFMax > cap(b) {
+		b = append(b, 0)
+	}
+	w := utf8.EncodeRune(b[n:n+utf8.UTFMax], r)
+	bp.bytes = b[:n+w]
+	return nil
+}
+
 type buffer []byte
 
 func (b *buffer) Write(p []byte) (n int, err error) {
@@ -106,11 +141,25 @@ func (bp *buffer) WriteRune(r rune) error {
 	return nil
 }
 
+type FmtProc struct {
+	bufIn fmtBuffer
+	pp
+}
+
+func (p *FmtProc) Init(buf []byte) {
+	p.buf = &p.bufIn
+	p.buf.bytes = buf
+	p.panicking = false
+	p.erroring = false
+	p.fmt.init(p.buf)
+}
+
 type pp struct {
 	n         int
 	panicking bool
 	erroring  bool // printing an error condition
-	buf       buffer
+	buf       *fmtBuffer
+	bufDef    fmtBuffer
 	// arg holds the current item, as an interface{}.
 	arg interface{}
 	// value holds the current item, as a reflect.Value, and will be
@@ -131,19 +180,21 @@ var ppFree = sync.Pool{
 // newPrinter allocates a new pp struct or grabs a cached one.
 func newPrinter() *pp {
 	p := ppFree.Get().(*pp)
+	p.buf = &p.bufDef
 	p.panicking = false
 	p.erroring = false
-	p.fmt.init(&p.buf)
+	p.fmt.init(p.buf)
 	return p
 }
 
 // free saves used pp structs in ppFree; avoids an allocation per invocation.
 func (p *pp) free() {
 	// Don't hold on to pp structs with large buffers.
-	if cap(p.buf) > 1024 {
+	if cap(p.buf.bytes) > 1024 {
 		return
 	}
-	p.buf = p.buf[:0]
+	p.buf = &p.bufDef
+	p.buf.bytes = p.buf.bytes[:0]
 	p.arg = nil
 	p.value = reflect.Value{}
 	ppFree.Put(p)
@@ -186,7 +237,7 @@ func (p *pp) Write(b []byte) (ret int, err error) {
 func Fprintf(w io.Writer, format string, a ...interface{}) (n int, err error) {
 	p := newPrinter()
 	p.doPrintf(format, a)
-	n, err = w.Write(p.buf)
+	n, err = w.Write(p.buf.bytes)
 	p.free()
 	return
 }
@@ -201,9 +252,15 @@ func Printf(format string, a ...interface{}) (n int, err error) {
 func Sprintf(format string, a ...interface{}) string {
 	p := newPrinter()
 	p.doPrintf(format, a)
-	s := string(p.buf)
+	s := string(p.buf.bytes)
 	p.free()
 	return s
+}
+
+// Bprintf formats according to a format specifier and returns the resulting []byte.
+func Bprintf(p *FmtProc, format string, a ...interface{}) []byte {
+	p.doPrintf(format, a)
+	return p.buf.bytes
 }
 
 // Errorf formats according to a format specifier and returns the string
@@ -220,7 +277,7 @@ func Errorf(format string, a ...interface{}) error {
 func Fprint(w io.Writer, a ...interface{}) (n int, err error) {
 	p := newPrinter()
 	p.doPrint(a, false, false)
-	n, err = w.Write(p.buf)
+	n, err = w.Write(p.buf.bytes)
 	p.free()
 	return
 }
@@ -237,9 +294,16 @@ func Print(a ...interface{}) (n int, err error) {
 func Sprint(a ...interface{}) string {
 	p := newPrinter()
 	p.doPrint(a, false, false)
-	s := string(p.buf)
+	s := string(p.buf.bytes)
 	p.free()
 	return s
+}
+
+// Bprint formats using the default formats for its operands and returns the resulting []byte.
+// Spaces are added between operands when neither is a string.
+func Bprint(p *FmtProc, a ...interface{}) []byte {
+	p.doPrint(a, false, false)
+	return p.buf.bytes
 }
 
 // These routines end in 'ln', do not take a format string,
@@ -252,7 +316,7 @@ func Sprint(a ...interface{}) string {
 func Fprintln(w io.Writer, a ...interface{}) (n int, err error) {
 	p := newPrinter()
 	p.doPrint(a, true, true)
-	n, err = w.Write(p.buf)
+	n, err = w.Write(p.buf.bytes)
 	p.free()
 	return
 }
@@ -269,9 +333,16 @@ func Println(a ...interface{}) (n int, err error) {
 func Sprintln(a ...interface{}) string {
 	p := newPrinter()
 	p.doPrint(a, true, true)
-	s := string(p.buf)
+	s := string(p.buf.bytes)
 	p.free()
 	return s
+}
+
+// Bprintln formats using the default formats for its operands and returns the resulting []byte.
+// Spaces are always added between operands and a newline is appended.
+func Bprintln(p *FmtProc, a ...interface{}) []byte {
+	p.doPrint(a, true, true)
+	return p.buf.bytes
 }
 
 // getField gets the i'th field of the struct value.

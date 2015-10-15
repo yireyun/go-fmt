@@ -57,7 +57,7 @@ type fmtFlags struct {
 // It prints into a buffer that must be set up separately.
 type fmt struct {
 	intbuf [nByte]byte
-	buf    *buffer
+	buf    *fmtBuffer
 	// width, precision
 	wid  int
 	prec int
@@ -68,7 +68,7 @@ func (f *fmt) clearflags() {
 	f.fmtFlags = fmtFlags{}
 }
 
-func (f *fmt) init(buf *buffer) {
+func (f *fmt) init(buf *fmtBuffer) {
 	f.buf = buf
 	f.clearflags()
 }
