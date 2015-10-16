@@ -3,7 +3,6 @@ package fmt
 
 import (
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -15,49 +14,37 @@ func TestPrint(t *testing.T) {
 		buf = buf[:0]
 		Fprintf(&buf, "%s", "hello word")
 		if strings.Compare(arg, string(buf)) != 0 {
-			t.Errorf("expect '%s', is not '%s' ", arg, string(buf))
+			t.Errorf("Fprintf: expect '%s', is not '%s' ", arg, string(buf))
 		}
 	}
 
 	for i := 0; i < 2; i++ {
 		s := Sprintf("%s", arg)
 		if strings.Compare(arg, s) != 0 {
-			t.Errorf("expect '%s', is not '%s' ", arg, s)
+			t.Errorf("Sprintf: expect '%s', is not '%s' ", arg, s)
 		}
 	}
 
-	p := new(FmtProc)
+	var buff = make([]byte, 0, 64)
 	for i := 0; i < 2; i++ {
-		p.Init(buf[:0])
-		ret := Bprint(p, arg)
+		ret := Bprint(buff[:0], arg)
 		if s := string(ret); strings.Compare(arg, s) != 0 {
-			t.Errorf("expect '%s', is not '%s' ", arg, s)
-		}
-		if s := string(p.bufIn.bytes); strings.Compare(arg, s) != 0 {
-			t.Errorf("expect '%s', is not '%s' ", arg, s)
+			t.Errorf("Bprint: expect '%s', is not '%s' ", arg, s)
 		}
 	}
 
 	for i := 0; i < 2; i++ {
-		p.Init(buf[:0])
-		ret := Bprintf(p, "%s", arg)
+		ret := Bprintf(buff[:0], "%s", arg)
 		if s := string(ret); strings.Compare(arg, s) != 0 {
-			t.Errorf("expect '%s', is not '%s' ", arg, s)
-		}
-		if s := string(p.bufIn.bytes); strings.Compare(arg, s) != 0 {
-			t.Errorf("expect '%s', is not '%s' ", arg, string(p.bufIn.bytes))
+			t.Errorf("Bprintf: expect '%s', is not '%s' ", arg, s)
 		}
 	}
 
 	argLn := "hello word\n"
 	for i := 0; i < 2; i++ {
-		p.Init(buf[:0])
-		ret := Bprintln(p, arg)
+		ret := Bprintln(buff[:0], arg)
 		if s := string(ret); strings.Compare(argLn, s) != 0 {
-			t.Errorf("expect '%s', is not '%s' ", argLn, s)
-		}
-		if s := string(p.bufIn.bytes); strings.Compare(argLn, s) != 0 {
-			t.Errorf("expect '%s', is not '%s' ", argLn, string(p.bufIn.bytes))
+			t.Errorf("Bprintln: expect '%s', is not '%s' ", argLn, s)
 		}
 	}
 }
@@ -70,26 +57,10 @@ func BenchmarkFprintf(b *testing.B) {
 	}
 }
 
-func BenchmarkBprintfWithoutPool(b *testing.B) {
-	buf := make([]byte, 0, 128)
-	p := new(FmtProc)
-	for i := 0; i < b.N; i++ {
-		p.Init(buf[:0])
-		Bprintf(p, "%s", "hello word")
-	}
-}
-
-var (
-	printPool = &sync.Pool{New: func() interface{} { return new(FmtProc) }}
-)
-
-func BenchmarkBprintfWithPool(b *testing.B) {
+func BenchmarkBprintf(b *testing.B) {
 	buf := make([]byte, 0, 128)
 	for i := 0; i < b.N; i++ {
-		p := printPool.Get().(*FmtProc)
-		p.Init(buf[:0])
-		Bprintf(p, "%s", "hello word")
-		printPool.Put(p)
+		Bprintf(buf[:0], "%s", "hello word")
 	}
 }
 
