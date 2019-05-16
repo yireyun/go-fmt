@@ -66,7 +66,7 @@ func TestPrint(t *testing.T) {
 		}
 	}
 
-	p := new(FmtProc)
+	p := new(Fmt)
 	for i := 0; i < 2; i++ {
 		p.Init(buf[:0])
 		ret := Bprint(p, arg)
@@ -112,7 +112,7 @@ func BenchmarkFprintf(b *testing.B) {
 
 func BenchmarkBprintfWithoutPool(b *testing.B) {
 	buf := make([]byte, 0, 128)
-	p := new(FmtProc)
+	p := new(Fmt)
 	for i := 0; i < b.N; i++ {
 		p.Init(buf[:0])
 		Bprintf(p, "%s", "hello word")
@@ -120,13 +120,13 @@ func BenchmarkBprintfWithoutPool(b *testing.B) {
 }
 
 var (
-	printPool = &sync.Pool{New: func() interface{} { return new(FmtProc) }}
+	printPool = &sync.Pool{New: func() interface{} { return new(Fmt) }}
 )
 
 func BenchmarkBprintfWithPool(b *testing.B) {
 	buf := make([]byte, 0, 128)
 	for i := 0; i < b.N; i++ {
-		p := printPool.Get().(*FmtProc)
+		p := printPool.Get().(*Fmt)
 		p.Init(buf[:0])
 		Bprintf(p, "%s", "hello word")
 		printPool.Put(p)

@@ -157,6 +157,10 @@ type Fmt struct {
 	pp
 }
 
+func (p *Fmt) Init(buf []byte) {
+	p.initBuffer(buf)
+}
+
 func (p *Fmt) initDefault() {
 	p.buf = &p.bufDef
 	p.buf.bytes = p.buf.bytes[:0]
