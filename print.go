@@ -154,6 +154,10 @@ func (p *FmtProc) Init(buf []byte) {
 	p.fmt.init(p.buf)
 }
 
+func (p *FmtProc) Bytes() []byte {
+	return p.bufIn.bytes
+}
+
 type pp struct {
 	n         int
 	panicking bool
@@ -1095,11 +1099,30 @@ BigSwitch:
 	return wasString
 }
 
-// intFromArg gets the argNumth element of a. On return, isInt reports whether the argument has type int.
+// intFromArg gets the argNumth element of a. On return, isInt reports whether the argument has integer type.
 func intFromArg(a []interface{}, argNum int) (num int, isInt bool, newArgNum int) {
 	newArgNum = argNum
 	if argNum < len(a) {
-		num, isInt = a[argNum].(int)
+		num, isInt = a[argNum].(int) // Almost always OK.
+		if !isInt {
+			// Work harder.
+			switch v := reflect.ValueOf(a[argNum]); v.Kind() {
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				n := v.Int()
+				if int64(int(n)) == n {
+					num = int(n)
+					isInt = true
+				}
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+				n := v.Uint()
+				if int64(n) >= 0 && uint64(int(n)) == n {
+					num = int(n)
+					isInt = true
+				}
+			default:
+				// Already 0, false.
+			}
+		}
 		newArgNum = argNum + 1
 		if tooLarge(num) {
 			num = 0

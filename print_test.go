@@ -1,11 +1,46 @@
 // print_test
-package fmt
+package fmt_test
 
 import (
+	. "fmt"
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 )
+
+type buffer []byte
+
+func (b *buffer) Write(p []byte) (n int, err error) {
+	*b = append(*b, p...)
+	return len(p), nil
+}
+
+func (b *buffer) WriteString(s string) (n int, err error) {
+	*b = append(*b, s...)
+	return len(s), nil
+}
+
+func (b *buffer) WriteByte(c byte) error {
+	*b = append(*b, c)
+	return nil
+}
+
+func (bp *buffer) WriteRune(r rune) error {
+	if r < utf8.RuneSelf {
+		*bp = append(*bp, byte(r))
+		return nil
+	}
+
+	b := *bp
+	n := len(b)
+	for n+utf8.UTFMax > cap(b) {
+		b = append(b, 0)
+	}
+	w := utf8.EncodeRune(b[n:n+utf8.UTFMax], r)
+	*bp = b[:n+w]
+	return nil
+}
 
 func TestPrint(t *testing.T) {
 	var buf = buffer{}
@@ -33,7 +68,7 @@ func TestPrint(t *testing.T) {
 		if s := string(ret); strings.Compare(arg, s) != 0 {
 			t.Errorf("expect '%s', is not '%s' ", arg, s)
 		}
-		if s := string(p.bufIn.bytes); strings.Compare(arg, s) != 0 {
+		if s := string(p.Bytes()); strings.Compare(arg, s) != 0 {
 			t.Errorf("expect '%s', is not '%s' ", arg, s)
 		}
 	}
@@ -44,8 +79,8 @@ func TestPrint(t *testing.T) {
 		if s := string(ret); strings.Compare(arg, s) != 0 {
 			t.Errorf("expect '%s', is not '%s' ", arg, s)
 		}
-		if s := string(p.bufIn.bytes); strings.Compare(arg, s) != 0 {
-			t.Errorf("expect '%s', is not '%s' ", arg, string(p.bufIn.bytes))
+		if s := string(p.Bytes()); strings.Compare(arg, s) != 0 {
+			t.Errorf("expect '%s', is not '%s' ", arg, s)
 		}
 	}
 
@@ -56,8 +91,8 @@ func TestPrint(t *testing.T) {
 		if s := string(ret); strings.Compare(argLn, s) != 0 {
 			t.Errorf("expect '%s', is not '%s' ", argLn, s)
 		}
-		if s := string(p.bufIn.bytes); strings.Compare(argLn, s) != 0 {
-			t.Errorf("expect '%s', is not '%s' ", argLn, string(p.bufIn.bytes))
+		if s := string(p.Bytes()); strings.Compare(argLn, s) != 0 {
+			t.Errorf("expect '%s', is not '%s' ", argLn, s)
 		}
 	}
 }
@@ -94,7 +129,9 @@ func BenchmarkBprintfWithPool(b *testing.B) {
 }
 
 func BenchmarkSprintf(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		Sprintf("%s", "hello word")
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			Sprintf("%s", "hello word")
+		}
+	})
 }
