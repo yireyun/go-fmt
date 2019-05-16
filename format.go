@@ -39,7 +39,7 @@ type fmtFlags struct {
 // A fmt is the raw formatter used by Printf etc.
 // It prints into a buffer that must be set up separately.
 type fmt struct {
-	buf *buffer
+	buf *fmtBuffer
 
 	fmtFlags
 
@@ -55,7 +55,7 @@ func (f *fmt) clearflags() {
 	f.fmtFlags = fmtFlags{}
 }
 
-func (f *fmt) init(buf *buffer) {
+func (f *fmt) init(buf *fmtBuffer) {
 	f.buf = buf
 	f.clearflags()
 }
@@ -65,13 +65,13 @@ func (f *fmt) writePadding(n int) {
 	if n <= 0 { // No padding bytes needed.
 		return
 	}
-	buf := *f.buf
+	buf := f.buf.bytes
 	oldLen := len(buf)
 	newLen := oldLen + n
 	// Make enough room for padding.
 	if newLen > cap(buf) {
-		buf = make(buffer, cap(buf)*2+n)
-		copy(buf, *f.buf)
+		buf = make([]byte, cap(buf)*2+n)
+		copy(buf, f.buf.bytes)
 	}
 	// Decide which byte the padding should be filled with.
 	padByte := byte(' ')
@@ -83,7 +83,7 @@ func (f *fmt) writePadding(n int) {
 	for i := range padding {
 		padding[i] = padByte
 	}
-	*f.buf = buf[:newLen]
+	f.buf.bytes = buf[:newLen]
 }
 
 // pad appends b to f.buf, padded on left (!f.minus) or right (f.minus).
@@ -364,7 +364,7 @@ func (f *fmt) fmtSbx(s string, b []byte, digits string) {
 		f.writePadding(f.wid - width)
 	}
 	// Write the encoding directly into the output buffer.
-	buf := *f.buf
+	buf := f.buf.bytes
 	if f.sharp {
 		// Add leading 0x or 0X.
 		buf = append(buf, '0', digits[16])
@@ -387,7 +387,7 @@ func (f *fmt) fmtSbx(s string, b []byte, digits string) {
 		// Encode each byte as two hexadecimal digits.
 		buf = append(buf, digits[c>>4], digits[c&0xF])
 	}
-	*f.buf = buf
+	f.buf.bytes = buf
 	// Handle padding to the right.
 	if f.widPresent && f.wid > width && f.minus {
 		f.writePadding(f.wid - width)
