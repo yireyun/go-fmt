@@ -3,11 +3,16 @@ package fmt_test
 
 import (
 	. "fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"unicode/utf8"
 )
+
+func init() {
+	Printf("%v\n", runtime.Version())
+}
 
 type buffer []byte
 
