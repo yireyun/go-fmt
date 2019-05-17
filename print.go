@@ -161,7 +161,8 @@ func (p *Fmt) Init(buf []byte) {
 }
 
 func (p *Fmt) Indent(pads []byte) {
-	p.buf.pads = pads
+	p.bufDef.pads = pads
+	p.bufOut.pads = pads
 }
 
 func (p *Fmt) Bytes() []byte {
