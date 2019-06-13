@@ -1,11 +1,51 @@
 // print_test
-package fmt
+package fmt_test
 
 import (
+	. "fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 )
+
+func init() {
+	Printf("%v\n", runtime.Version())
+}
+
+type buffer []byte
+
+func (b *buffer) Write(p []byte) (n int, err error) {
+	*b = append(*b, p...)
+	return len(p), nil
+}
+
+func (b *buffer) WriteString(s string) (n int, err error) {
+	*b = append(*b, s...)
+	return len(s), nil
+}
+
+func (b *buffer) WriteByte(c byte) error {
+	*b = append(*b, c)
+	return nil
+}
+
+func (bp *buffer) WriteRune(r rune) error {
+	if r < utf8.RuneSelf {
+		*bp = append(*bp, byte(r))
+		return nil
+	}
+
+	b := *bp
+	n := len(b)
+	for n+utf8.UTFMax > cap(b) {
+		b = append(b, 0)
+	}
+	w := utf8.EncodeRune(b[n:n+utf8.UTFMax], r)
+	*bp = b[:n+w]
+	return nil
+}
 
 func TestPrint(t *testing.T) {
 	var buf = buffer{}
@@ -154,6 +194,7 @@ func BenchmarkFprint(b *testing.B) {
 func BenchmarkFmtPoolFprint(b *testing.B) {
 	var buf = buffer{}
 	for i := 0; i < b.N; i++ {
+		buf = buf[:0]
 		p := fmtPool.Get().(*Fmt)
 		p.Fprint(&buf, "hello word")
 		fmtPool.Put(p)
@@ -164,6 +205,7 @@ func BenchmarkFmtFprint(b *testing.B) {
 	var buf = buffer{}
 	p := new(Fmt)
 	for i := 0; i < b.N; i++ {
+		buf = buf[:0]
 		p.Fprint(&buf, "hello word")
 	}
 }
@@ -178,6 +220,7 @@ func BenchmarkFprintln(b *testing.B) {
 func BenchmarkFmtPoolFprintLn(b *testing.B) {
 	var buf = buffer{}
 	for i := 0; i < b.N; i++ {
+		buf = buf[:0]
 		p := fmtPool.Get().(*Fmt)
 		p.Fprintln(&buf, "hello word")
 		fmtPool.Put(p)
@@ -187,6 +230,7 @@ func BenchmarkFmtFprintLn(b *testing.B) {
 	var buf = buffer{}
 	p := new(Fmt)
 	for i := 0; i < b.N; i++ {
+		buf = buf[:0]
 		p.Fprintln(&buf, "hello word")
 	}
 }
@@ -201,6 +245,7 @@ func BenchmarkFprintf(b *testing.B) {
 func BenchmarkFmtPoolFprintf(b *testing.B) {
 	var buf = buffer{}
 	for i := 0; i < b.N; i++ {
+		buf = buf[:0]
 		p := fmtPool.Get().(*Fmt)
 		p.Fprintf(&buf, "%s", "hello word")
 		fmtPool.Put(p)
@@ -210,6 +255,7 @@ func BenchmarkFmtFprintf(b *testing.B) {
 	var buf = buffer{}
 	p := new(Fmt)
 	for i := 0; i < b.N; i++ {
+		buf = buf[:0]
 		p.Fprintf(&buf, "%s", "hello word")
 	}
 }
@@ -320,10 +366,13 @@ func BenchmarkFmtSprintLn(b *testing.B) {
 }
 
 func BenchmarkSprintf(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		Sprintf("%s", "hello word")
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			Sprintf("%s", "hello word")
+		}
+	})
 }
+
 func BenchmarkFmtPoolSprintf(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		p := fmtPool.Get().(*Fmt)
