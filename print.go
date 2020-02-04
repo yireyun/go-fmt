@@ -6,6 +6,7 @@ package fmt
 
 import (
 	"errors"
+	"internal/fmtsort" //with go sort
 	"io"
 	"os"
 	"reflect"
@@ -71,7 +72,7 @@ type GoStringer interface {
 	GoString() string
 }
 
-// Use simple []byte instead of bytes.Buffer to avoid large dependency.
+// Use pads []byte instead of bytes.Buffer to avoid large dependency.
 type fmtBuffer struct {
 	pads  []byte
 	bytes []byte
@@ -123,6 +124,7 @@ func (bp *fmtBuffer) WriteRune(r rune) {
 	bp.bytes = b[:n+w]
 }
 
+// Use simple []byte instead of bytes.Buffer to avoid large dependency.
 type buffer []byte
 
 func (b *buffer) Write(p []byte) {
@@ -341,6 +343,16 @@ func (p *pp) free() {
 	p.bufDef.bytes = p.bufDef.bytes[:0]
 	p.bufOut.bytes = nil
 	p.bufOut.pads = nil
+	// Proper usage of a sync.Pool requires each entry to have approximately
+	// the same memory cost. To obtain this property when the stored type
+	// contains a variably-sized buffer, we add a hard limit on the maximum buffer
+	// to place back in the pool.
+	//
+	// See https://golang.org/issue/23199
+	if cap(p.buf.bytes) > 64<<10 {
+		return
+	}
+
 	p.buf = &p.bufDef
 	p.arg = nil
 	p.value = reflect.Value{}
@@ -712,7 +724,7 @@ func (p *pp) fmtBytes(v []byte, verb rune, typeString string) {
 			p.buf.WriteByte(']')
 		}
 	case 's':
-		p.fmt.fmtS(string(v))
+		p.fmt.fmtBs(v)
 	case 'x':
 		p.fmt.fmtBx(v, ldigits)
 	case 'X':
@@ -762,7 +774,7 @@ func (p *pp) fmtPointer(value reflect.Value, verb rune) {
 	}
 }
 
-func (p *pp) catchPanic(arg interface{}, verb rune) {
+func (p *pp) catchPanic(arg interface{}, verb rune, method string) {
 	if err := recover(); err != nil {
 		// If it's a nil pointer, just say "<nil>". The likeliest causes are a
 		// Stringer that fails to guard against nil or a nil pointer for a
@@ -785,6 +797,8 @@ func (p *pp) catchPanic(arg interface{}, verb rune) {
 		p.buf.WriteString(percentBangString)
 		p.buf.WriteRune(verb)
 		p.buf.WriteString(panicString)
+		p.buf.WriteString(method)
+		p.buf.WriteString(" method: ")
 		p.panicking = true
 		p.printArg(err, 'v')
 		p.panicking = false
@@ -801,7 +815,7 @@ func (p *pp) handleMethods(verb rune) (handled bool) {
 	// Is it a Formatter?
 	if formatter, ok := p.arg.(Formatter); ok {
 		handled = true
-		defer p.catchPanic(p.arg, verb)
+		defer p.catchPanic(p.arg, verb, "Format")
 		formatter.Format(p, verb)
 		return
 	}
@@ -810,7 +824,7 @@ func (p *pp) handleMethods(verb rune) (handled bool) {
 	if p.fmt.sharpV {
 		if stringer, ok := p.arg.(GoStringer); ok {
 			handled = true
-			defer p.catchPanic(p.arg, verb)
+			defer p.catchPanic(p.arg, verb, "GoString")
 			// Print the result of GoString unadorned.
 			p.fmt.fmtS(stringer.GoString())
 			return
@@ -828,13 +842,13 @@ func (p *pp) handleMethods(verb rune) (handled bool) {
 			switch v := p.arg.(type) {
 			case error:
 				handled = true
-				defer p.catchPanic(p.arg, verb)
+				defer p.catchPanic(p.arg, verb, "Error")
 				p.fmtString(v.Error(), verb)
 				return
 
 			case Stringer:
 				handled = true
-				defer p.catchPanic(p.arg, verb)
+				defer p.catchPanic(p.arg, verb, "String")
 				p.fmtString(v.String(), verb)
 				return
 			}
@@ -978,8 +992,8 @@ func (p *pp) printValue(value reflect.Value, verb rune, depth int) {
 		} else {
 			p.buf.WriteString(mapString)
 		}
-		keys := f.MapKeys()
-		for i, key := range keys {
+		sorted := fmtsort.Sort(f)        //with go sort
+		for i, key := range sorted.Key { //with go sort
 			if i > 0 {
 				if p.fmt.sharpV {
 					p.buf.WriteString(commaSpaceString)
@@ -989,7 +1003,7 @@ func (p *pp) printValue(value reflect.Value, verb rune, depth int) {
 			}
 			p.printValue(key, verb, depth+1)
 			p.buf.WriteByte(':')
-			p.printValue(f.MapIndex(key), verb, depth+1)
+			p.printValue(sorted.Value[i], verb, depth+1) //with go sort
 		}
 		if p.fmt.sharpV {
 			p.buf.WriteByte('}')
