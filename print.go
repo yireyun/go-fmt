@@ -87,11 +87,29 @@ func (b *fmtBuffer) write(p []byte) {
 }
 
 func (b *fmtBuffer) writeString(s string) {
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		b.bytes = append(b.bytes, c)
-		if c == '\n' && len(b.pads) > 0 {
-			b.bytes = append(b.bytes, b.pads...)
+	if len(b.pads) == 0 {
+		b.bytes = append(b.bytes, s...)
+	} else {
+		for i := 0; i < len(s); i++ {
+			c := s[i]
+			switch c {
+			case '\n':
+				b.bytes = append(b.bytes, c)
+				b.bytes = append(b.bytes, b.pads...)
+			case '\\':
+				n := byte(0)
+				if i+1 < len(s) {
+					n = s[i+1]
+				}
+				if c == '\\' && n == 'n' {
+					i++
+					b.bytes = append(b.bytes, '\n')
+				} else {
+					b.bytes = append(b.bytes, c)
+				}
+			default:
+				b.bytes = append(b.bytes, c)
+			}
 		}
 	}
 }
